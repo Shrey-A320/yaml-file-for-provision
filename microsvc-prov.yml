@@ -1,0 +1,140 @@
+parameters:
+- name: appName
+  type: string
+  default: ''
+
+- name: env
+  type: string
+  values: ['qa', 'test', 'uat', 'prod', 'dev']
+  default: 'test'
+
+- name: location
+  type: string
+  values: ['northeurope', 'uksouth', 'westeurope']
+  default: 'northeurope'
+
+- name: azureServiceConnection
+  type: string
+
+- name: useStorage
+  type: boolean
+  default: false
+
+- name: storageName
+  type: string
+  default: ''
+
+- name: keyVaultShortName
+  type: string
+  default: ''  
+
+- name: customAppSettings
+  type: object
+  default: [] 
+
+- name: customFunctionSettings
+  type: object
+  default: [] 
+
+- name: bicepRepo
+  type: string
+  default: 'self'
+
+- name: technicalserviceid
+  type: string
+  default: 'ts01544'
+
+- name: useFunctions
+  type: boolean
+  default: false
+
+- name: useSearch
+  type: boolean
+  default: false
+
+- name: useAppService
+  type: boolean
+  default: true
+
+- name: isManagedIdentity
+  type: boolean
+  default: false
+
+- name: sharedResourceGroupName
+  type: string
+  default: ''
+
+- name: specifiedAppServicePlan
+  type: string
+  default: ''
+
+- name: appConfigName
+  type: string
+  default: ''
+
+- name: appConfigResourceGroup
+  type: string
+  default: '' 
+
+- name: appConfigSubscriptionId
+  type: string
+  default: ''       
+
+- name: appConfigServiceConnection
+  type: string
+  default: ''
+
+- name: enableBlueGreenDeploymentSupport
+  type: boolean
+  default: false
+
+jobs:
+  - deployment: '${{parameters.appName}}_infrastructure'
+    displayName: 'Provision micro service infrastructure'
+    environment: 
+      name: ${{parameters.env}}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - checkout: '${{ parameters.bicepRepo }}'
+            - task: AzureCLI@2
+              inputs:
+                azureSubscription: '${{ parameters.azureServiceConnection }}'
+                scriptType: 'ps'
+                scriptLocation: 'inlineScript'
+                inlineScript: |
+                  $resourceGroupName = "rg-iwpt-${{ parameters.sharedResourceGroupName }}-${{ parameters.env }}"
+                  $rgExists = az group exists --name $resourceGroupName
+                  $shouldCreateResourceGroup = if ($rgExists -eq $false) { "true" } else { "false" }
+                  Write-Host "##vso[task.setvariable variable=shouldCreateResourceGroup]$shouldCreateResourceGroup"
+
+            - task: AzureResourceManagerTemplateDeployment@3
+              inputs:
+                deploymentScope: 'Subscription'
+                azureResourceManagerConnection: '${{ parameters.azureServiceConnection }}'
+                action: 'Create Or Update Resource Group'
+                location: '${{ parameters.location }}'
+                csmFile: './Bicep/morningstar-provision-microservice.bicep'
+                deploymentMode: 'Incremental'
+                deploymentName: 'pro-${{ parameters.appName }}-$(Build.BuildNumber)-$(System.StageName)'
+                overrideParameters: >- 
+                                    -appName ${{ parameters.appName }}
+                                    -env ${{ parameters.env }}
+                                    -useStorage ${{ parameters.useStorage }}
+                                    -storageName ${{ parameters.storageName }}
+                                    -sharedResourceGroupName ${{ parameters.sharedResourceGroupName }}
+                                    -specifiedAppServicePlan ${{ parameters.specifiedAppServicePlan }}
+                                    -useFunctions ${{ parameters.useFunctions }}
+                                    -useSearch ${{ parameters.useSearch }}
+                                    -customAppSettings ${{ convertToJson(parameters.customAppSettings) }}
+                                    -customFunctionSettings ${{ convertToJson(parameters.customFunctionSettings) }}
+                                    -technicalserviceid ${{ parameters.technicalserviceid }}
+                                    -isManagedIdentity ${{parameters.isManagedIdentity}}
+                                    -keyVaultShortName ${{ parameters.keyVaultShortName }}
+                                    -appConfigName ${{ parameters.appConfigName }}
+                                    -appConfigResourceGroup ${{ parameters.appConfigResourceGroup }}
+                                    -shouldCreateResourceGroup $(shouldCreateResourceGroup)
+                                    -appConfigSubscriptionId ${{ parameters.appConfigSubscriptionId }}
+                                    -enableBlueGreenDeploymentSupport ${{ parameters.enableBlueGreenDeploymentSupport }}
+                                    -useAppService ${{ parameters.useAppService }}
